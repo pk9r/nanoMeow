@@ -1,0 +1,14 @@
+<Solution>
+  <Project Path="src/nanoMeow.CanBus/nanoMeow.CanBus.nfproj" Type="11a8dd76-328b-46df-9f39-f559912d0360" Id="d86ecdab-44fd-4e68-a1ea-916e9f37831a">
+    <Deploy />
+  </Project>
+  <Project Path="src/nanoMeow.Esp32/nanoMeow.Esp32.nfproj" Type="11a8dd76-328b-46df-9f39-f559912d0360" Id="3c798714-6461-42bb-b552-6ce45ec6c267">
+    <Deploy />
+  </Project>
+  <Project Path="src/nanoMeow.Mcp2515.Esp32/nanoMeow.Mcp2515.Esp32.nfproj" Type="11a8dd76-328b-46df-9f39-f559912d0360">
+    <Deploy />
+  </Project>
+  <Project Path="src/nanoMeow.Mcp2515/nanoMeow.Mcp2515.nfproj" Type="11a8dd76-328b-46df-9f39-f559912d0360" Id="ae00631b-bdcd-4bb2-a8f3-04ceb93677d9">
+    <Deploy />
+  </Project>
+</Solution>
