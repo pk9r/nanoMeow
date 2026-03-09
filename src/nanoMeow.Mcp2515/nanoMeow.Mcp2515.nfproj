@@ -20,7 +20,7 @@
   <ItemGroup>
     <Compile Include="Abstractions\ISpiMcuService.cs" />
     <Compile Include="Enums\Mcp2515CanIntF.cs" />
-    <Compile Include="Enums\Mask.cs" />
+    <Compile Include="Enums\Mcp2515Mask.cs" />
     <Compile Include="Enums\Mcp2515Clock.cs" />
     <Compile Include="Enums\CanSpeed.cs" />
     <Compile Include="Enums\Mcp2515Register.cs" />
