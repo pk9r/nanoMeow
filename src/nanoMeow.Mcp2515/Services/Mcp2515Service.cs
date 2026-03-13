@@ -1,7 +1,6 @@
 ﻿// Links:
 // - https://github.com/autowp/arduino-mcp2515/blob/86fd56e54266defda9600efebc76f506e24c1cc1/mcp2515.cpp
 
-
 using Iot.Device.Mcp25xxx;
 using Iot.Device.Mcp25xxx.Register;
 using Iot.Device.Mcp25xxx.Register.CanControl;
@@ -15,6 +14,8 @@ using nanoMeow.Mcp2515.Enums;
 using System;
 using System.Device.Gpio;
 using System.Device.Spi;
+using System.Diagnostics;
+using System.IO;
 using System.Threading;
 
 
@@ -29,6 +30,7 @@ namespace nanoMeow.Mcp2515.Services
         const byte CANSTAT_OPMOD = 0b11100000;
 
         private readonly ILogger _logger;
+        private readonly GpioController _gpioController;
 
         public ISpiMcuService SpiMcuService { get; set; }
 
@@ -37,8 +39,6 @@ namespace nanoMeow.Mcp2515.Services
         public Iot.Device.Mcp25xxx.Mcp2515 Mcp2515 { get; set; }
 
         public PinSpiMcuMcp2515 PinSpiMcuMcp2515 { get; }
-
-        public GpioController GpioController { get; }
 
         public GpioPin Interrupt { get; set; } // Mcp25xxx bad open interrupt
 
@@ -50,7 +50,7 @@ namespace nanoMeow.Mcp2515.Services
             _logger = this.GetCurrentClassLogger();
 
             PinSpiMcuMcp2515 = pinSpiMcuMcp2515;
-            GpioController = gpioController;
+            _gpioController = gpioController;
 
             var spiConnectionSettings = new SpiConnectionSettings(
                 busId: PinSpiMcuMcp2515.BusId,
@@ -59,22 +59,22 @@ namespace nanoMeow.Mcp2515.Services
             {
                 DataFlow = DataFlow.MsbFirst,
                 Configuration = SpiBusConfiguration.FullDuplex,
-                ClockFrequency = 10_000_000,
+                ClockFrequency = 2 * 1000 * 1000, // MHz, MCP2515 supports up to 10MHz
             };
             SpiDevice = new SpiDevice(spiConnectionSettings);
 
             Mcp2515 = new Iot.Device.Mcp25xxx.Mcp2515(
                 spiDevice: SpiDevice,
-                gpioController: GpioController
+                gpioController: _gpioController
             );
 
-            var interruptPin = PinSpiMcuMcp2515.INT;
+            int interruptPin = PinSpiMcuMcp2515.INT;
             if (interruptPin != -1)
             {
                 _logger.LogInformation(
                     "Open pin {0} as interrupt pin", interruptPin
                 );
-                Interrupt = GpioController.OpenPin(
+                Interrupt = _gpioController.OpenPin(
                     pinNumber: interruptPin,
                     mode: PinMode.Input
                 );
@@ -88,7 +88,8 @@ namespace nanoMeow.Mcp2515.Services
         )
         {
             _logger.LogInformation(
-                "Interrupt.ValueChanged {0}", sender
+                "Interrupt.ValueChanged {0}",
+                sender
             );
         }
 
@@ -165,7 +166,7 @@ namespace nanoMeow.Mcp2515.Services
             new() { Ctrl = Address.TxB2Ctrl, Sidh = Address.TxB2Sidh, Data = Address.TxB2D0}
         };
 
-        private readonly Mcp2515RXBnRegs[] RXB = new Mcp2515RXBnRegs[]
+        private readonly Mcp2515RXBnRegs[] _rxbn = new Mcp2515RXBnRegs[]
         {
             new()
             {
@@ -185,10 +186,9 @@ namespace nanoMeow.Mcp2515.Services
 
         const byte TXB_TXREQ = 0x08;
 
-
         public void SendMessage(CanFrame frame)
         {
-            if (frame.CanDlc > CAN_MAX_DLEN)
+            if (frame.Dlc > CAN_MAX_DLEN)
             {
                 throw new InvalidOperationException(
                     message: "Data length exceeds maximum CAN frame size"
@@ -202,7 +202,7 @@ namespace nanoMeow.Mcp2515.Services
 
             for (int i = 0; i < txBuffers.Length; i++)
             {
-                var txbuf = TXB[(byte)txBuffers[i]];
+                Mcp2515TXBnRegs txbuf = TXB[(byte)txBuffers[i]];
 
                 byte ctrlval = Mcp2515.Read(txbuf.Ctrl);
                 if ((ctrlval & TXB_TXREQ) == 0)
@@ -219,30 +219,33 @@ namespace nanoMeow.Mcp2515.Services
 
         private void SendMessage(Mcp2515TXBn txbn, CanFrame frame)
         {
-            if (frame.CanDlc > CAN_MAX_DLEN)
+            if (frame.Dlc > CAN_MAX_DLEN)
             {
                 throw new InvalidOperationException(
                     message: "Data length exceeds maximum CAN frame size"
                 );
             }
 
-            var txbuf = TXB[(byte)txbn];
+            Mcp2515TXBnRegs txbuf = TXB[(byte)txbn];
 
             var data = new SpanByte(new byte[13]);
 
-            bool ext = (frame.CanId & (ulong)CanIdFlag.EFF) != 0;
-            bool rtr = (frame.CanId & (ulong)CanIdFlag.RTR) != 0;
-            uint id = (uint)(frame.CanId & (ext ? (ulong)CanIdMask.EFF : (ulong)CanIdMask.SFF));
+            bool ext = (frame.Id & (ulong)CanIdFlag.EFF) != 0;
+            bool rtr = (frame.Id & (ulong)CanIdFlag.RTR) != 0;
+            uint id = (uint)(frame.Id & (ext ? (ulong)CanIdMask.EFF : (ulong)CanIdMask.SFF));
 
             PrepareId(data, ext, id);
 
-            data[MCP_DLC] = (byte)(rtr ? (frame.CanDlc | RTR_MASK) : frame.CanDlc);
+            data[MCP_DLC] = (byte)(rtr ? (frame.Dlc | RTR_MASK) : frame.Dlc);
 
-            var source = new SpanByte(frame.Data);
-            var destination = data.Slice(MCP_DATA, frame.CanDlc);
+            SpanByte source = new(frame.Data);
+            SpanByte destination = data.Slice(MCP_DATA, frame.Dlc);
             source.CopyTo(destination);
 
-            Mcp2515.Write(txbuf.Sidh, data.Slice(0, 5 + frame.CanDlc));
+            Mcp2515.Write(
+                address: txbuf.Sidh,
+                buffer: data.Slice(0, 5 + frame.Dlc)
+            );
 
             Mcp2515.BitModify(
                 address: txbuf.Ctrl,
@@ -259,15 +262,28 @@ namespace nanoMeow.Mcp2515.Services
             }
         }
 
-        private CanFrame ReadMessage(Mcp2515RXBn rxbn)
+        public CanFrame[] ReceiveFrames { get; } =
+            new CanFrame[2] { new(), new() };
+
+        /// <summary>
+        /// Reads a CAN message from the specified receive buffer and stores it in the corresponding frame.
+        /// </summary>
+        /// <param name="rxbn"></param>
+        /// <exception cref="IOException">
+        /// Error occurred during CAN message reception, such as invalid data length.
+        /// </exception>
+        private void ReadMessage(byte rxbn)
         {
-            var frame = new CanFrame();
+            Mcp2515RXBnRegs rxbnReg = _rxbn[rxbn];
 
-            var rxb = RXB[(byte)rxbn];
+            byte[] tbufdata = Mcp2515.ReadRxBuffer(
+                addressPointer: rxbnReg.Sidh,
+                byteCount: 13
+            );
 
-            var tbufdata = Mcp2515.ReadRxBuffer(rxb.Sidh, byteCount: 5);
-
-            uint id = (uint)((tbufdata[MCP_SIDH] << 3) + (tbufdata[MCP_SIDL] >> 5));
+            int idh = tbufdata[MCP_SIDH] << 3;
+            int idl = tbufdata[MCP_SIDL] >> 5;
+            uint id = (uint)(idh + idl);
 
             if ((tbufdata[MCP_SIDL] & TXB_EXIDE_MASK) == TXB_EXIDE_MASK)
             {
@@ -280,82 +296,86 @@ namespace nanoMeow.Mcp2515.Services
             byte dlc = (byte)(tbufdata[MCP_DLC] & DLC_MASK);
             if (dlc > CAN_MAX_DLEN)
             {
-                throw new Exception(
-                    message: "Data length exceeds maximum CAN frame size"
-                );
+                throw new IOException();
             }
 
-            uint ctrl = Mcp2515.Read(rxb.Ctrl);
-            if ((ctrl & (uint)Mcp2515RXBnCtrl.RTR) != 0)
-            {
-                id |= (uint)(ulong)CanIdFlag.RTR;
-            }
+            //uint ctrl = Mcp2515.Read(rxbnReg.Ctrl);
+            //if ((ctrl & (uint)Mcp2515RXBnCtrl.RTR) != 0)
+            //{
+            //    id |= (uint)(ulong)CanIdFlag.RTR;
+            //}
 
-            frame.CanId = id;
-            frame.CanDlc = dlc;
-            frame.Data = Mcp2515.ReadRxBuffer(rxb.Data, dlc);
+            CanFrame frame = ReceiveFrames[rxbn];
 
-            Mcp2515.BitModify(Address.CanIntF, (byte)rxb.RXnIF, 0);
+            frame.Id = id;
+            frame.Dlc = dlc;
+            //frame.Data = Mcp2515.ReadRxBuffer(
+            //    addressPointer: rxbnReg.Data,
+            //    byteCount: dlc
+            //);
+            frame.Data = new SpanByte(tbufdata, 5, dlc).ToArray();
 
-            return frame;
+            Mcp2515.BitModify(
+                address: Address.CanIntF,
+                mask: (byte)rxbnReg.RXnIF,
+                value: 0
+            );
         }
 
-        public CanFrame ReadMessage()
+        public void ReadMessages()
         {
-            var stat = Mcp2515.ReadStatus();
+            ReadStatusResponse stat = Mcp2515.ReadStatus();
 
-            if (stat.HasFlag(ReadStatusResponse.Rx0If))
-                return ReadMessage(Mcp2515RXBn.RXB0);
-            if (stat.HasFlag(ReadStatusResponse.Rx1If))
-                return ReadMessage(Mcp2515RXBn.RXB1);
-            
-            return null;
+            bool isRx0IfSet = stat.HasFlag(ReadStatusResponse.Rx0If);
+            bool isRx1IfSet = stat.HasFlag(ReadStatusResponse.Rx1If);
+
+            if (isRx0IfSet)
+                ReadMessage(rxbn: 0);
+            if (isRx1IfSet)
+                ReadMessage(rxbn: 1);
         }
 
-        public bool TryReadMessage(out CanFrame frame)
+        public bool TryReadMessages()
         {
             try
             {
-                frame = ReadMessage();
+                ReadMessages();
             }
             catch (Exception)
             {
-                frame = null;
                 return false;
             }
 
             return true;
         }
 
-        public void SetFilter(
-            Mcp2515Rxf filter,
-            bool ext, uint ulData)
-        {
-            SetConfigMode();
+        //public void SetFilter(
+        //    Mcp2515Rxf filter,
+        //    bool ext, uint ulData)
+        //{
+        //    var reg = filter switch
+        //    {
+        //        Mcp2515Rxf.RXF0 => Address.RxF0Sidh,
+        //        Mcp2515Rxf.RXF1 => Address.RxF1Sidh,
+        //        Mcp2515Rxf.RXF2 => Address.RxF2Sidh,
+        //        Mcp2515Rxf.RXF3 => Address.RxF3Sidh,
+        //        Mcp2515Rxf.RXF4 => Address.RxF4Sidh,
+        //        Mcp2515Rxf.RXF5 => Address.RxF5Sidh,
+        //        _ => throw new InvalidOperationException(
+        //            message: "Invalid filter."),
+        //    };
 
-            var reg = filter switch
-            {
-                Mcp2515Rxf.RXF0 => Address.RxF0Sidh,
-                Mcp2515Rxf.RXF1 => Address.RxF1Sidh,
-                Mcp2515Rxf.RXF2 => Address.RxF2Sidh,
-                Mcp2515Rxf.RXF3 => Address.RxF3Sidh,
-                Mcp2515Rxf.RXF4 => Address.RxF4Sidh,
-                Mcp2515Rxf.RXF5 => Address.RxF5Sidh,
-                _ => throw new InvalidOperationException(
-                    message: "Invalid filter."),
-            };
-
-            var tbufdata = new SpanByte(new byte[4]);
-            PrepareId(tbufdata, ext, ulData);
-            Mcp2515.Write(reg, tbufdata);
-        }
+        //    var tbufdata = new SpanByte(new byte[4]);
+        //    PrepareId(tbufdata, ext, ulData);
+        //    Mcp2515.Write(reg, tbufdata);
+        //}
 
         public void SetStandardFilter(
             byte rxFilterNumber,
             ushort standardIdentifierFilter
         )
         {
-            var reg = rxFilterNumber switch
+            Address reg = rxFilterNumber switch
             {
                 0 => Address.RxF0Sidh,
                 1 => Address.RxF1Sidh,
@@ -375,22 +395,33 @@ namespace nanoMeow.Mcp2515.Services
             Mcp2515.Write(reg, tbufdata);
         }
 
+        /// <summary>
+        /// Sets the standard identifier mask for the specified receive buffer.
+        /// </summary>
+        /// <param name="rxMaskNumber">
+        /// The receive buffer mask number (0 or 1).
+        /// </param>
+        /// <param name="standardIdentifierMask">
+        /// The standard identifier mask to apply to the specified receive buffer.
+        /// </param>
+        /// <exception cref="InvalidOperationException">
+        /// Thrown when an invalid receive buffer mask number is specified.
+        /// </exception>
         public void SetStandardFilterMask(
             byte rxMaskNumber,
-            ushort standardIdentifierMask)
+            ushort standardIdentifierMask
+        )
         {
-            var reg = rxMaskNumber switch
+            Address reg = rxMaskNumber switch
             {
                 0 => Address.RxM0Sidh,
                 1 => Address.RxM1Sidh,
-                _ => throw new InvalidOperationException(
-                    message: "Invalid mask number."
-                ),
+                _ => throw new InvalidOperationException(),
             };
             var tbufdata = new SpanByte(new byte[4]);
 
             tbufdata[0] = (byte)(standardIdentifierMask >> 3);
-            tbufdata[1] = (byte)((standardIdentifierMask & 0x07) << 5);
+            tbufdata[1] = (byte)((standardIdentifierMask & 0b0000_0111) << 5);
 
             Mcp2515.Write(reg, tbufdata);
         }
@@ -413,20 +444,20 @@ namespace nanoMeow.Mcp2515.Services
         //    Mcp2515.Write(reg, tbufdata);
         //}
 
-        const byte TXB_EXIDE_MASK = 0x08;
-        const byte DLC_MASK = 0x0F;
-        const byte RTR_MASK = 0x40;
+        private const byte TXB_EXIDE_MASK = 0b0000_1000;
+        private const byte DLC_MASK = 0b000_1111;
+        private const byte RTR_MASK = 0b0100_0000;
 
-        const byte MCP_SIDH = 0;
-        const byte MCP_SIDL = 1;
-        const byte MCP_EID8 = 2;
-        const byte MCP_EID0 = 3;
-        const byte MCP_DLC = 4;
-        const byte MCP_DATA = 5;
+        private const byte MCP_SIDH = 0;
+        private const byte MCP_SIDL = 1;
+        private const byte MCP_EID8 = 2;
+        private const byte MCP_EID0 = 3;
+        private const byte MCP_DLC = 4;
+        private const byte MCP_DATA = 5;
 
         private void PrepareId(SpanByte buffer, bool ext, uint id)
         {
-            var canid = (ushort)(id & 0xFFFF);
+            ushort canid = (ushort)(id & 0xFFFF);
 
             if (ext)
             {
@@ -447,105 +478,56 @@ namespace nanoMeow.Mcp2515.Services
             }
         }
 
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="canCtrl"></param>
+        /// <param name="timeoutMilis"></param>
+        /// <exception cref="TimeoutException">
+        /// Failed to enter requested mode within the specified timeout.
+        /// </exception>
         public void SetMode(CanCtrl canCtrl, int timeoutMilis = 100)
         {
             Mcp2515.WriteByte(canCtrl);
             Thread.Sleep(20);
 
-            var mode = canCtrl.RequestOperationMode;
-            _logger.LogInformation(
-                "Requesting MCP2515 to enter {0} mode",
-                mode
-            );
+            OperationMode mode = canCtrl.RequestOperationMode;
 
-            var timeoutTicks = DateTime.UtcNow.Ticks +
-                timeoutMilis * TimeSpan.TicksPerMillisecond;
-
-            var modeMatch = false;
-            while (DateTime.UtcNow.Ticks < timeoutTicks)
+            if (!WaitForMode(mode, timeoutMilis))
             {
-                modeMatch = IsInMode(mode);
-                if (modeMatch) break;
+                throw new TimeoutException();
 
-                _logger.LogInformation(
-                    "Mode not yet set, sleeping for 20ms..."
-                );
-                Thread.Sleep(20);
+                //_logger.LogInformation("Failed to enter requested mode");
+                //_logger.LogInformation("Sleeping indefinitely...");
+                //Thread.Sleep(Timeout.Infinite);
             }
-
-            if (!modeMatch)
-            {
-                //throw new TimeoutException(
-                //    message: "Failed to enter requested mode"
-                //);
-
-                _logger.LogInformation("Failed to enter requested mode");
-                _logger.LogInformation("Sleeping indefinitely...");
-                Thread.Sleep(Timeout.Infinite);
-            }
-
-            _logger.LogInformation(
-                "MCP2515 mode set to {0} mode",
-                mode
-            );
         }
 
-        private void SetMode(
+        public bool WaitForMode(
             OperationMode mode,
             int timeoutMilis = 100
         )
         {
-            if (IsInMode(mode))
-                return;
-
-            var timeoutTicks = DateTime.UtcNow.Ticks +
+            long timeoutTicks = DateTime.UtcNow.Ticks +
                 timeoutMilis * TimeSpan.TicksPerMillisecond;
 
-            Mcp2515.BitModify(
-                address: Address.CanCtrl,
-                mask: CANCTRL_REQOP | CANCTRL_OSM,
-                value: (byte)mode
-            );
-
-            var modeMatch = false;
+            bool modeMatch = false;
             while (DateTime.UtcNow.Ticks < timeoutTicks)
             {
                 modeMatch = IsInMode(mode);
                 if (modeMatch) break;
+
+                Thread.Sleep(20);
             }
 
-            if (!modeMatch)
-            {
-                throw new TimeoutException(
-                    message: "Failed to enter requested mode"
-                );
-            }
-
-            _logger.LogInformation(
-                "MCP2515 mode set to {0} mode", mode
-            );
+            return modeMatch;
         }
 
         private bool IsInMode(OperationMode mode)
         {
-            var currentMode = Mcp2515.Read(Address.CanStat);
+            byte currentMode = Mcp2515.Read(Address.CanStat);
             currentMode &= CANSTAT_OPMOD;
             return currentMode == (byte)mode << 5;
-        }
-
-        public void SetNormalMode(int timeoutMilis = 100)
-        {
-            SetMode(OperationMode.NormalOperation, timeoutMilis);
-        }
-
-        public void SetConfigMode(int timeoutMilis = 100)
-        {
-            SetMode(OperationMode.Configuration, timeoutMilis);
-        }
-
-        public void SetLoopbackMode(int timeoutMilis = 100)
-        {
-            SetMode(OperationMode.Loopback, timeoutMilis);
         }
 
         public void Dispose()
@@ -556,11 +538,8 @@ namespace nanoMeow.Mcp2515.Services
 
         public void SetBitrate(
             CanSpeed canSpeed,
-            Mcp2515Clock mcp2515Clock,
-            int timeoutMilis = 100)
+            Mcp2515Clock mcp2515Clock)
         {
-            SetConfigMode(timeoutMilis);
-
             byte set = 1, cfg1 = 0, cfg2 = 0, cfg3 = 0;
             switch (mcp2515Clock)
             {

@@ -21,6 +21,7 @@
     <Compile Include="CanFrame.cs" />
     <Compile Include="Enums\CanIdFlag.cs" />
     <Compile Include="Enums\CanIdMask.cs" />
+    <Compile Include="Extensions\CanFrameExtensions.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>

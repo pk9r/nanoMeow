@@ -11,7 +11,7 @@ namespace nanoMeow.Mcp2515.Enums
         RXM_EXT    = 0b01000000,
         RXM_STDEXT = 0b00000000,
         RXM_MASK   = 0b01100000,
-        RTR        = 0b00001000,
+        RTR        = 1 << 3,
 
         RxB0_BUKT = 1 << 3,
         RxB0_FILHIT_MASK = 0b11,
