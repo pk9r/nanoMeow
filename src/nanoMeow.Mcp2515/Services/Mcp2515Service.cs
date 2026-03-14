@@ -330,9 +330,21 @@ namespace nanoMeow.Mcp2515.Services
             bool isRx1IfSet = stat.HasFlag(ReadStatusResponse.Rx1If);
 
             if (isRx0IfSet)
+            {
                 ReadMessage(rxbn: 0);
+            }
+            else
+            {
+                ReceiveFrames[0].Id = ushort.MaxValue;
+            }
             if (isRx1IfSet)
+            {
                 ReadMessage(rxbn: 1);
+            }
+            else
+            {
+                ReceiveFrames[1].Id = ushort.MaxValue;
+            }
         }
 
         public bool TryReadMessages()

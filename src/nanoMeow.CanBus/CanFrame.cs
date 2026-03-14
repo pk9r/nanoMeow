@@ -6,6 +6,6 @@ namespace nanoMeow.CanBus
     {
         public uint Id { get; set; }
         public byte Dlc { get; set; }
-        public byte[] Data { get; set; }
+        public byte[] Data { get; set; } = new byte[8];
     }
 }
