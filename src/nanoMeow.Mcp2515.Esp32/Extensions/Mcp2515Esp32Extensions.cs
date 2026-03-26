@@ -1,6 +1,5 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using System;
 using nanoFramework.Hardware.Esp32;
-using nanoFramework.Logging;
 using nanoMeow.Esp32;
 
 namespace nanoMeow.Mcp2515.Esp32.Extensions
@@ -17,10 +16,10 @@ namespace nanoMeow.Mcp2515.Esp32.Extensions
 
         public static void UseMcp2515ForEsp32(
             this Mcp2515Factory mcp2515Factory, 
-            SpiBusIndex spiBusId, int interruptPin = -1
+            Esp32SpiBusIndex spiBusId, int interruptPin = -1
         )
         {
-            if (spiBusId == SpiBusIndex.HSPI)
+            if (spiBusId == Esp32SpiBusIndex.HSPI)
             {
                 mcp2515Factory.PinSpiMcuMcp2515 = PinEsp32Spi1;
 
@@ -31,7 +30,7 @@ namespace nanoMeow.Mcp2515.Esp32.Extensions
                 Configuration.SetPinFunction(
                     PinEsp32Spi1.SCK, DeviceFunction.SPI1_CLOCK);
             }
-            else if (spiBusId == SpiBusIndex.VSPI)
+            else if (spiBusId == Esp32SpiBusIndex.VSPI)
             {
                 mcp2515Factory.PinSpiMcuMcp2515 = PinEsp32Spi2;
 
@@ -44,21 +43,13 @@ namespace nanoMeow.Mcp2515.Esp32.Extensions
             }
             else
             {
-                throw new System.Exception("Unsupported SPI bus ID");
+                throw new InvalidOperationException();
             }
 
             if (interruptPin != -1)
             {
                 mcp2515Factory.PinSpiMcuMcp2515.INT = interruptPin;
             }
-
-            var logger = LogDispatcher.GetLogger(nameof(Mcp2515Esp32Extensions));
-
-            logger.LogInformation(
-                "Configured ESP32 pins for MCP2515 on SPI bus {0}",
-                spiBusId);
         }
-
     }
-
 }

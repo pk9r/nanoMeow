@@ -1,6 +1,11 @@
 ﻿// Links:
 // - https://github.com/autowp/arduino-mcp2515/blob/86fd56e54266defda9600efebc76f506e24c1cc1/mcp2515.cpp
 
+using System;
+using System.Device.Gpio;
+using System.Device.Spi;
+using System.IO;
+using System.Threading;
 using Iot.Device.Mcp25xxx;
 using Iot.Device.Mcp25xxx.Register;
 using Iot.Device.Mcp25xxx.Register.CanControl;
@@ -11,12 +16,6 @@ using nanoMeow.CanBus;
 using nanoMeow.CanBus.Enums;
 using nanoMeow.Mcp2515.Abstractions;
 using nanoMeow.Mcp2515.Enums;
-using System;
-using System.Device.Gpio;
-using System.Device.Spi;
-using System.Diagnostics;
-using System.IO;
-using System.Threading;
 
 
 namespace nanoMeow.Mcp2515.Services
@@ -59,7 +58,7 @@ namespace nanoMeow.Mcp2515.Services
             {
                 DataFlow = DataFlow.MsbFirst,
                 Configuration = SpiBusConfiguration.FullDuplex,
-                ClockFrequency = 2 * 1000 * 1000, // MHz, MCP2515 supports up to 10MHz
+                ClockFrequency = 8 * 1000 * 1000, // MHz, MCP2515 supports up to 10MHz
             };
             SpiDevice = new SpiDevice(spiConnectionSettings);
 
@@ -500,18 +499,29 @@ namespace nanoMeow.Mcp2515.Services
         /// </exception>
         public void SetMode(CanCtrl canCtrl, int timeoutMilis = 100)
         {
+            OperationMode mode = canCtrl.RequestOperationMode;
+
             Mcp2515.WriteByte(canCtrl);
             Thread.Sleep(20);
-
-            OperationMode mode = canCtrl.RequestOperationMode;
 
             if (!WaitForMode(mode, timeoutMilis))
             {
                 throw new TimeoutException();
+            }
+        }
 
-                //_logger.LogInformation("Failed to enter requested mode");
-                //_logger.LogInformation("Sleeping indefinitely...");
-                //Thread.Sleep(Timeout.Infinite);
+        public void SetMode(OperationMode mode, int timeoutMilis = 100)
+        {
+            byte modeValue = (byte)((byte)mode << 5);
+            Mcp2515.BitModify(
+                address: Address.CanCtrl,
+                mask: 0b1110_0000,
+                value: modeValue
+            );
+            Thread.Sleep(20);
+            if (!WaitForMode(mode, timeoutMilis))
+            {
+                throw new TimeoutException();
             }
         }
 

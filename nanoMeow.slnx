@@ -5,7 +5,13 @@
   <Project Path="src/nanoMeow.Esp32/nanoMeow.Esp32.nfproj" Type="11a8dd76-328b-46df-9f39-f559912d0360" Id="3c798714-6461-42bb-b552-6ce45ec6c267">
     <Deploy />
   </Project>
+  <Project Path="src/nanoMeow.Esp32S3/nanoMeow.Esp32S3.nfproj" Type="11a8dd76-328b-46df-9f39-f559912d0360" Id="0fdd1dfe-b913-4414-a048-d123aeceb2fe">
+    <Deploy />
+  </Project>
   <Project Path="src/nanoMeow.Mcp2515.Esp32/nanoMeow.Mcp2515.Esp32.nfproj" Type="11a8dd76-328b-46df-9f39-f559912d0360">
+    <Deploy />
+  </Project>
+  <Project Path="src/nanoMeow.Mcp2515.Esp32S3/nanoMeow.Mcp2515.Esp32S3.nfproj" Type="11a8dd76-328b-46df-9f39-f559912d0360" Id="1382faf9-c02a-4cb8-98c1-4b928d4caf31">
     <Deploy />
   </Project>
   <Project Path="src/nanoMeow.Mcp2515/nanoMeow.Mcp2515.nfproj" Type="11a8dd76-328b-46df-9f39-f559912d0360" Id="ae00631b-bdcd-4bb2-a8f3-04ceb93677d9">

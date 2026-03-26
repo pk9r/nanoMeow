@@ -31,5 +31,28 @@ namespace nanoMeow.CanBus.Extensions
 
             return maskedValue != 0;
         }
+
+        public static byte GetUInt2(
+            this CanFrame frame,
+            byte mergedIndex)
+        {
+            byte byteIndex = (byte)(mergedIndex >> 4);
+            byte bitIndex = (byte)(mergedIndex & 0x0F);
+
+            int maskedValue = frame.Data[byteIndex] >> bitIndex & 0b11;
+
+            return (byte)maskedValue;
+        }
+
+        public static ushort GetUInt16(
+            this CanFrame frame,
+            byte byteIndex
+        )
+        {
+            return (ushort)(
+                (frame.Data[byteIndex] << 8) |
+                frame.Data[byteIndex + 1]
+            );
+        }
     }
 }

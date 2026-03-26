@@ -18,6 +18,7 @@
   </PropertyGroup>
   <Import Project="$(NanoFrameworkProjectSystemPath)NFProjectSystem.props" Condition="Exists('$(NanoFrameworkProjectSystemPath)NFProjectSystem.props')" />
   <ItemGroup>
+    <Compile Include="CanButton.cs" />
     <Compile Include="CanFrame.cs" />
     <Compile Include="Enums\CanIdFlag.cs" />
     <Compile Include="Enums\CanIdMask.cs" />
